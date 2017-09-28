@@ -1,15 +1,44 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.scm.NullSCM"/>
-  <canRoam>false</canRoam>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+ENV_FILE=app/env.json
+#prepare environment
+sed -e &quot;s,{{PROD_CHECKOUT_ENCRYPTION_PASS}},$PROD_CHECKOUT_ENCRYPTION_PASS,&quot; \
+-e  &quot;s,{{NODE_BACKEND_USER}},$NODE_BACKEND_USER,&quot; \
+-e  &quot;s,{{PROD_SALT_HASH_INVITE}},$PROD_SALT_HASH_INVITE,&quot; \
+-e  &quot;s,{{PROD_VISAGE_ES_USER_NAME}},$PROD_VISAGE_ES_USER_NAME,&quot; \
+-e  &quot;s,{{PROD_VISAGE_ES_USER_PWD}},$PROD_VISAGE_ES_USER_PWD,&quot; \
+-e  &quot;s,{{FULL_CONTACT_API_KEY}},$FULL_CONTACT_API_KEY,&quot; \
+-e  &quot;s,{{PROD_SENDY_API_KEY}},$PROD_SENDY_API_KEY,&quot; \
+-e  &quot;s,{{PAYONEER_USERNAME}},$PAYONEER_USERNAME,&quot; \
+-e  &quot;s,{{PAYONEER_PASSWORD}},$PAYONEER_PASSWORD,&quot; \
+-e  &quot;s,{{PAYONEER_PARTNERID}},$PAYONEER_PARTNERID,&quot; \
+-e  &quot;s,{{PROD_REDIS_PASSWORD}},$PROD_REDIS_PASSWORD,&quot; \
+-e  &quot;s,{{INTERCOM_ACCESS_TOKEN}},$INTERCOM_ACCESS_TOKEN,&quot; \
+-e  &quot;s,{{EMAIL_VERIFIER_API_KEY}},$EMAIL_VERIFIER_API_KEY,&quot; \
+-e  &quot;s,{{SLACK_WEBHOOK_COMMITMENT}},$SLACK_WEBHOOK_COMMITMENT,&quot; \
+-e  &quot;s,{{SLACK_WEBHOOK_FEEDBACK}},$SLACK_WEBHOOK_FEEDBACK,&quot; \
+-e  &quot;s,{{SLACK_WEBHOOK_JOBACTIONS}},$SLACK_WEBHOOK_JOBACTIONS,&quot; \
+-e  &quot;s,{{SLACK_WEBHOOK_NEW_CUSTOMER}},$SLACK_WEBHOOK_NEW_CUSTOMER,&quot; \
+-e  &quot;s,{{SLACK_WEBHOOK_NEW_USER}},$SLACK_WEBHOOK_NEW_USER,&quot; \
+-e  &quot;s,{{JWT_CLIENT_ID}},$JWT_CLIENT_ID,&quot; \
+-e  &quot;s,{{JWT_SECRET}},$JWT_SECRET,&quot; \
+-e  &quot;s,{{FO_HOST}},$PROD_FO_HOST,&quot; \
+-e  &quot;s,{{BO_HOST}},$PROD_BO_HOST,&quot; -i.bak ${ENV_FILE}</command>
+    </hudson.tasks.Shell>
+  </builders>
   <publishers/>
   <buildWrappers/>
 </project>
