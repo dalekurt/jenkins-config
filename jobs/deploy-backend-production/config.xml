@@ -101,6 +101,89 @@ for IP in $INSTANCE_IPS; do
 done
 </command>
     </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+REGION=us-west-2
+COMPOSE_FILE=&quot;docker-compose.prod.yml&quot;
+MONGO_CONTAINER_NAME=mongo-visage
+PERSISTENCE_TASK_NAME=persist-deploy-prod
+ELASTIC_CONTAINER_NAME=elasticsearch
+MYSQL_AMB_CONTAINER=ambassador-mysql
+IMAGE_VERSION=${VERSION_NUMBER}
+TASK_NAME=node-deploy-prod
+SERVICE_NAME=visage-api-prod-service
+
+print_service_status() {
+    aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME
+}
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+
+aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --desired-count 0
+
+aws ecs delete-service --cluster $CLUSTER_NAME --service $SERVICE_NAME
+
+while ! DRAINING_SERVICES=$(print_service_status 2&gt; /dev/null) ||
+        [ &quot;$(echo $DRAINING_SERVICES | grep &apos;DRAINING&apos; | wc -l)&quot; -ne 0 ] ; do
+        echo &quot;Deleted services are still draining...&quot;
+        sleep 5
+done
+
+cd persistence
+
+#set elastic search PWD
+sed -e &quot;s,{{PROD_VISAGE_ES_USER_NAME}},$PROD_VISAGE_ES_USER_NAME,&quot; \
+-e  &quot;s,{{PROD_VISAGE_MYSQL_ROOT_PASSWORD}},$PROD_VISAGE_MYSQL_ROOT_PASSWORD,&quot; \
+-e  &quot;s,{{PROD_VISAGE_ES_USER_PWD}},$PROD_VISAGE_ES_USER_PWD,&quot; -i.bak ${COMPOSE_FILE}
+
+# Create only the task definitions with ecs cli because we can t set a load balancer with ecs-cli for now
+# https://github.com/aws/amazon-ecs-cli/issues/21
+#/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $TASK_NAME service rm
+
+FULL_MONGO=$(/usr/local/bin/ecs-cli ps | grep &quot;$MONGO_CONTAINER_NAME&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MONGO=$(echo $FULL_MONGO | awk &apos;{print $1}&apos;)
+PORT_MONGO=$(echo $FULL_MONGO | awk &apos;{print $2}&apos;)
+echo &quot;mongo : $FULL_MONGO&quot;
+
+FULL_ELASTIC_SEARCH=$(/usr/local/bin/ecs-cli ps | grep &quot;${ELASTIC_CONTAINER_NAME}&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_ELASTIC_SEARCH=$(echo $FULL_ELASTIC_SEARCH | awk &apos;{print $1}&apos;)
+PORT_ELASTIC_SEARCH=$(echo $FULL_ELASTIC_SEARCH | awk &apos;{print $2}&apos;)
+echo &quot;elastic : $FULL_ELASTIC_SEARCH&quot;
+
+FULL_MYSQL_SENDY=$(/usr/local/bin/ecs-cli ps | grep &quot;${MYSQL_AMB_CONTAINER}&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MYSQL_SENDY=$(echo $FULL_MYSQL_SENDY | awk &apos;{print $1}&apos;)
+PORT_MYSQL_SENDY=$(echo $FULL_MYSQL_SENDY | awk &apos;{print $2}&apos;)
+echo &quot;mysql sendy : $FULL_MYSQL_SENDY&quot;
+
+#Main directory
+cd ..
+
+#Link with mongodb aws and set the build number
+sed -e &quot;s,{{HOST_MONGO}},$HOST_MONGO,g&quot; \
+-e  &quot;s,{{PORT_MONGO}},$PORT_MONGO,g&quot; \
+-e &quot;s,{{PROD_VISAGE_MYSQL_ROOT_PASSWORD}},$PROD_VISAGE_MYSQL_ROOT_PASSWORD,g&quot; \
+-e &quot;s,{{NODE_BACKEND_USER}},$NODE_BACKEND_USER,g&quot; \
+-e &quot;s,{{HOST_ELASTIC_SEARCH}},$HOST_ELASTIC_SEARCH,g&quot; \
+-e &quot;s,{{PORT_ELASTIC_SEARCH}},$PORT_ELASTIC_SEARCH,g&quot; \
+-e &quot;s,{{PROD_REDIS_PASSWORD}},$PROD_REDIS_PASSWORD,g&quot; \
+-e &quot;s,{{HOST_MYSQL_SENDY}},$HOST_MYSQL_SENDY,g&quot; \
+-e &quot;s,{{PORT_MYSQL_SENDY}},$PORT_MYSQL_SENDY,g&quot; \
+-e  &quot;s,{{VERSION_NUMBER}},$VERSION_NUMBER,g&quot; \
+-e  &quot;s,{{PROD_AWS_SECRET_ACCESS_KEY}},$PROD_AWS_SECRET_ACCESS_KEY,g&quot; \
+-e  &quot;s,{{PROD_AWS_ACCESS_KEY_ID}},$PROD_AWS_ACCESS_KEY_ID,g&quot; -i.bak ${COMPOSE_FILE}
+
+
+/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $TASK_NAME create &amp;&gt; outnode.log
+TASK_WEB=$(grep &apos;TaskDefinition&apos; outnode.log | awk -F  &quot;=&quot; &apos;{gsub(&quot;\&quot;&quot;,&quot;&quot;,$5);print $5}&apos;)
+echo &quot;taskweb : $TASK_WEB&quot;
+
+aws ecs create-service --cluster $CLUSTER_NAME --service-name $SERVICE_NAME --task-definition $TASK_WEB --load-balancers loadBalancerName=ecs-elb-backend-prod,containerName=web,containerPort=3000 --role ecs-service-role --desired-count 1
+#Ensure node service is stable
+echo &apos;waiting for node service to be stable and node task to be run&apos;
+aws ecs wait services-stable --cluster $CLUSTER_NAME --services $SERVICE_NAME
+echo &apos;Deployment completed!&apos;</command>
+    </hudson.tasks.Shell>
   </builders>
   <publishers/>
   <buildWrappers>
