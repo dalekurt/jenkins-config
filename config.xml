@@ -41,8 +41,8 @@
         <string>mongodb-database-backup</string>
         <string>mongodb-database-drop-staging</string>
         <string>mongodb-database-load-fixtures-staging</string>
+        <string>mongodb-database-production-redeploy</string>
         <string>mongodb-database-restore</string>
-        <string>redeploy-production-mongodb-database</string>
       </jobNames>
       <jobFilters/>
       <columns>
