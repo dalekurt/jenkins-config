@@ -1,5 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
@@ -40,5 +41,17 @@ sed -e &quot;s,{{PROD_CHECKOUT_ENCRYPTION_PASS}},$PROD_CHECKOUT_ENCRYPTION_PASS,
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <EnvInjectBuildWrapper plugin="envinject@2.1.3">
+      <info>
+        <scriptContent>#!/bin/bash
+echo  &quot;VERSION_NUMBER=&quot;$(cat package.json | grep version | awk &apos;{print $2}&apos; | sed -e &apos;s/&quot;//g&apos; -e &quot;s/&apos;//g&quot; -e &apos;s/,//g&apos; ) &gt; version.properties</scriptContent>
+        <secureGroovyScript plugin="script-security@1.34">
+          <script></script>
+          <sandbox>false</sandbox>
+        </secureGroovyScript>
+        <loadFilesFromMaster>false</loadFilesFromMaster>
+      </info>
+    </EnvInjectBuildWrapper>
+  </buildWrappers>
 </project>
