@@ -1,15 +1,82 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.scm.NullSCM"/>
-  <canRoam>false</canRoam>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
-  <publishers/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-staging
+REGION=us-west-2
+COMPOSE_FILE=&quot;docker-compose.staging.yml&quot;
+MONGO_SERVICE_NAME=visage-mongo-staging-service
+NODE_SERVICE_NAME=visage-api-staging-service
+MONGO_TASK_NAME=mongo-deploy-staging
+KEY_FILE=/var/lib/jenkins/cluster-b-key.pem
+
+DATE=20170113195202
+BACKUP_NAME=DB_${DATE}
+TASK_NAME=node-deploy-staging
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+
+cd mongo
+
+FULL_MONGO=$(/usr/local/bin/ecs-cli ps | grep &quot;mongo-visage&quot; | grep &quot;RUNNING&quot; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MONGO=$(echo $FULL_MONGO | awk &apos;{print $1}&apos;)
+PORT_MONGO=$(echo $FULL_MONGO | awk &apos;{print $2}&apos;)
+
+
+#DATE=$(date +&quot;%Y%m%d&quot;)
+#BACKUP_NAME=/tmp/backup/${DATE}
+CLEAN_UP=&quot;rm -rf /home/ec2-user/restore &amp;&amp; mkdir /home/ec2-user/restore&quot;
+UNCOMPRESS=&quot;tar --overwrite -xvf /home/ec2-user/restore/${BACKUP_NAME}.tar -C /home/ec2-user/restore/&quot;
+MONGO_DROP=&quot;mongo visage --eval &apos;db.dropDatabase();&apos;&quot;
+MONGO_RESTORE=&quot;mongorestore --db visage --archive&quot;
+
+
+echo $MONGO_RESTORE
+#Do the back up
+DEST=&quot;ec2-user@&quot;$HOST_MONGO
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no &quot;
+
+rm /tmp/*.tar
+
+#copy from a s3 bucket
+aws s3 cp s3://recentbackups/${BACKUP_NAME}.tar /tmp/${BACKUP_NAME}.tar
+
+ssh $SSH_ARGS$DEST -t &quot;bash -c \&quot;${CLEAN_UP}\&quot; &quot;
+
+#copy on EC2 instance
+scp $SSH_ARGS /tmp/${BACKUP_NAME}.tar $DEST:/home/ec2-user/restore/$BACKUP_NAME.tar
+
+CONTAINER_ID=$(ssh $SSH_ARGS$DEST -t &quot;sudo bash -c \&quot;docker ps | grep ${MONGO_TASK_NAME} | grep mongo-visage | cut -d&apos; &apos; -f1 \&quot;&quot;)
+
+ssh $SSH_ARGS$DEST -t sudo &quot;bash -c \&quot;docker exec -i $CONTAINER_ID $MONGO_DROP \&quot; &quot;
+
+#restart the web service so mongo and elastic can rebuild index
+echo &apos;stopping web service&apos;
+aws ecs update-service --cluster $CLUSTER_NAME --service $NODE_SERVICE_NAME --desired-count 0
+aws ecs wait services-stable --cluster $CLUSTER_NAME --services $NODE_SERVICE_NAME
+echo &apos;starting web service&apos;
+aws ecs update-service --cluster $CLUSTER_NAME --service $NODE_SERVICE_NAME --desired-count 1
+aws ecs wait services-stable --cluster $CLUSTER_NAME --services $NODE_SERVICE_NAME
+echo &apos;done !&apos;</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.Mailer plugin="mailer@1.20">
+      <recipients>hello@dalekurtmurray.com</recipients>
+      <dontNotifyEveryUnstableBuild>false</dontNotifyEveryUnstableBuild>
+      <sendToIndividuals>false</sendToIndividuals>
+    </hudson.tasks.Mailer>
+  </publishers>
   <buildWrappers/>
 </project>
