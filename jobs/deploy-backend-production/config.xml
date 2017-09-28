@@ -54,6 +54,53 @@ sed -e &quot;s,{{PROD_CHECKOUT_ENCRYPTION_PASS}},$PROD_CHECKOUT_ENCRYPTION_PASS,
       <buildAdditionalArgs></buildAdditionalArgs>
       <forceTag>false</forceTag>
     </com.cloudbees.dockerpublish.DockerBuilder>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+
+set -e
+
+#Set the credentials to be able to pull from private directory and deploy the services
+EXTRA_ECS_CONFIG=&quot;ECS_CLUSTER=${CLUSTER_NAME}\nECS_ENGINE_AUTH_TYPE=dockercfg\nECS_ENGINE_AUTH_DATA={\&quot;https://index.docker.io/v1/\&quot;:{\&quot;auth\&quot;:\&quot;YWRtaW52aXNhZ2U6MjMmJl9PanVs\&quot;,\&quot;email\&quot;:\&quot;adminvisage\&quot;}}&quot;
+REGION=us-west-2
+KEY_FILE=/var/lib/jenkins/cluster-a-key.pem
+echo $EXTRA_ECS_CONFIG
+
+print_instance_ips() {
+    INSTANCE_ARNS=$(aws --region $REGION ecs list-container-instances --cluster $CLUSTER_NAME --query &apos;containerInstanceArns[*]&apos; --output text)
+    INSTANCE_IDS=$(aws --region $REGION ecs describe-container-instances --cluster $CLUSTER_NAME --container-instances $INSTANCE_ARNS --query &apos;containerInstances[*].ec2InstanceId&apos; --output text)
+    aws --region $REGION ec2 describe-instances --instance-ids $INSTANCE_IDS --query &apos;Reservations[*].Instances[*].PublicIpAddress&apos; --output text
+}
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+echo -n &quot;Waiting for instances to be up to add auth credentials (this may take a while) ...&quot;
+while ! INSTANCE_IPS=$(print_instance_ips 2&gt; /dev/null) ||
+        [ &quot;$(echo $INSTANCE_IPS | wc -w)&quot; -ne $CLUSTER_SIZE ] ; do
+    sleep 5
+done
+echo &quot;done&quot;
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no ec2-user@&quot;
+echo $KEY_FILE
+echo $SSH_ARGS
+for IP in $INSTANCE_IPS; do
+    echo $IP
+#delete old default and auth cluster configuration don&apos;t fail if nothing to remove
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;sudo rm /var/lib/ecs/data/ecs_agent_data.json || true&apos;&quot;
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;echo -e $(printf %q $EXTRA_ECS_CONFIG)  &gt; /etc/ecs/ecs.config&apos;&quot;
+#don&apos;t fail if nothing to stop    
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;sudo stop ecs || true&apos;&quot;
+    ssh $SSH_ARGS$IP -t -t sudo start ecs
+#wait for ecs agent to start properly
+    n=0
+    until [ $n -ge 5 ]
+    do
+      ssh $SSH_ARGS$IP -t -t curl http://localhost:51678/v1/metadata &amp;&amp; break
+      n=$[$n+1]
+      sleep 2
+    done
+done
+</command>
+    </hudson.tasks.Shell>
   </builders>
   <publishers/>
   <buildWrappers>
