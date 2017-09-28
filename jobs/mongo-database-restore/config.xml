@@ -1,15 +1,88 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.scm.NullSCM"/>
-  <canRoam>false</canRoam>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
-  <publishers/>
-  <buildWrappers/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+REGION=us-west-2
+COMPOSE_FILE=&quot;docker-compose.prod.yml&quot;
+MONGO_CONTAINER_NAME=mongo-visage
+PERSISTENCE_TASK_NAME=persist-deploy-prod
+KEY_FILE=/var/lib/jenkins/cluster-a-key.pem
+DATE=20170427074501
+BACKUP_NAME=DB_${DATE}
+TASK_NAME=node-deploy-prod
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+
+cd persistence
+
+FULL_MONGO=$(/usr/local/bin/ecs-cli ps | grep &quot;$MONGO_CONTAINER_NAME&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MONGO=$(echo $FULL_MONGO | awk &apos;{print $1}&apos;)
+PORT_MONGO=$(echo $FULL_MONGO | awk &apos;{print $2}&apos;)
+echo &quot;mongo : $FULL_MONGO&quot;
+
+
+#DATE=$(date +&quot;%Y%m%d&quot;)
+#BACKUP_NAME=/tmp/backup/${DATE}
+CLEAN_UP=&quot;rm -rf /home/ec2-user/restore &amp;&amp; mkdir /home/ec2-user/restore&quot;
+UNCOMPRESS=&quot;tar --overwrite -xvf /home/ec2-user/restore/${BACKUP_NAME}.tar -C /home/ec2-user/restore/&quot;
+MONGO_DROP=&quot;mongo visage -u visageAdmin -p &apos;${VISAGE_ADMIN_USER}&apos; --authenticationDatabase admin --eval &apos;db.dropDatabase();&apos;&quot;
+MONGO_RESTORE=&quot;mongorestore -u visageAdmin -p &apos;${VISAGE_ADMIN_USER}&apos; --authenticationDatabase admin --db visage --archive&quot;
+
+
+echo $MONGO_RESTORE
+#Do the back up
+DEST=&quot;ec2-user@&quot;$HOST_MONGO
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no &quot;
+
+rm /tmp/*.tar
+
+#copy from a s3 bucket
+aws s3 cp s3://recentbackups/${BACKUP_NAME}.tar /tmp/${BACKUP_NAME}.tar
+echo $SSH_ARGS$DEST
+
+ssh $SSH_ARGS$DEST -t &quot;bash -c \&quot;${CLEAN_UP}\&quot; &quot;
+
+scp $SSH_ARGS /tmp/${BACKUP_NAME}.tar $DEST:/home/ec2-user/restore/$BACKUP_NAME.tar
+
+CONTAINER_ID=$(ssh $SSH_ARGS$DEST -t &quot;sudo bash -c \&quot;docker ps | grep ${PERSISTENCE_TASK_NAME} | grep $MONGO_CONTAINER_NAME | cut -d&apos; &apos; -f1 \&quot;&quot;)
+
+echo &quot;container ID : $CONTAINER_ID&quot;
+
+ssh $SSH_ARGS$DEST -t sudo &quot;bash -c \&quot;docker exec -i $CONTAINER_ID $MONGO_DROP \&quot; &quot;
+
+ssh $SSH_ARGS$DEST -t sudo &quot;bash -c \&quot;${UNCOMPRESS} &amp;&amp; docker exec -i $CONTAINER_ID $MONGO_RESTORE &lt; /home/ec2-user/restore/tmp/backup/${DATE} \&quot; &quot;
+
+
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.Mailer plugin="mailer@1.20">
+      <recipients>hello@dalekurtmurray.com</recipients>
+      <dontNotifyEveryUnstableBuild>false</dontNotifyEveryUnstableBuild>
+      <sendToIndividuals>false</sendToIndividuals>
+    </hudson.tasks.Mailer>
+  </publishers>
+  <buildWrappers>
+    <org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper plugin="credentials-binding@1.13">
+      <bindings>
+        <org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+          <credentialsId></credentialsId>
+          <variable>VISAGE_ADMIN_USER</variable>
+        </org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+      </bindings>
+    </org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper>
+  </buildWrappers>
 </project>
