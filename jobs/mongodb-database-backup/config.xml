@@ -1,15 +1,72 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.scm.NullSCM"/>
-  <canRoam>false</canRoam>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
-  <publishers/>
-  <buildWrappers/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+REGION=us-west-2
+COMPOSE_FILE=&quot;docker-compose.prod.yml&quot;
+PERSIST_TASK_NAME=persist-deploy-prod
+MONGO_CONTAINER_NAME=mongo-visage
+KEY_FILE=/var/lib/jenkins/cluster-a-key.pem
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+
+cd persistence
+
+FULL_MONGO=$(/usr/local/bin/ecs-cli ps  | grep &quot;${MONGO_CONTAINER_NAME}&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MONGO=$(echo $FULL_MONGO | awk &apos;{print $1}&apos;)
+PORT_MONGO=$(echo $FULL_MONGO | awk &apos;{print $2}&apos;)
+echo &quot;mongo : $FULL_MONGO&quot;
+
+
+DATE=$(date +&quot;%Y%m%d%H%M%S&quot;)
+BACKUP_NAME=/tmp/backup/${DATE}
+CLEAN_UP=&quot;rm -rf /tmp/backup &amp;&amp; mkdir /tmp/backup&quot;
+COMPRESS=&quot;tar cvf ${BACKUP_NAME}.tar ${BACKUP_NAME}&quot;
+MONGO_DUMP=&quot;mongodump -u visageAdmin -p &apos;${VISAGE_ADMIN_USER}&apos; --authenticationDatabase admin --db visage --archive&quot;
+
+echo $MONGO_DUMP
+#Do the back up
+DEST=&quot;ec2-user@&quot;$HOST_MONGO
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no &quot;
+
+CONTAINER_ID=$(ssh $SSH_ARGS$DEST -t &quot;sudo bash -c \&quot;docker ps | grep ${PERSIST_TASK_NAME} | grep &quot;${MONGO_CONTAINER_NAME}&quot; | cut -d&apos; &apos; -f1 \&quot;&quot;)
+
+ssh $SSH_ARGS$DEST -t sudo &quot;bash -c \&quot;${CLEAN_UP} &amp;&amp; docker exec -i $CONTAINER_ID $MONGO_DUMP &gt; ${BACKUP_NAME} &amp;&amp; ${COMPRESS}\&quot; &quot;
+
+rm /tmp/*.tar
+scp $SSH_ARGS $DEST:$BACKUP_NAME.tar /tmp/${DATE}.tar
+
+#copy to a s3 bucket
+aws s3 cp /tmp/${DATE}.tar s3://recentbackups/DB_${DATE}.tar</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.Mailer plugin="mailer@1.20">
+      <recipients>hello@dalekurtmurray.com</recipients>
+      <dontNotifyEveryUnstableBuild>false</dontNotifyEveryUnstableBuild>
+      <sendToIndividuals>false</sendToIndividuals>
+    </hudson.tasks.Mailer>
+  </publishers>
+  <buildWrappers>
+    <org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper plugin="credentials-binding@1.13">
+      <bindings>
+        <org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+          <credentialsId></credentialsId>
+          <variable>VISAGE_ADMIN_USER</variable>
+        </org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+      </bindings>
+    </org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper>
+  </buildWrappers>
 </project>
