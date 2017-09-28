@@ -1,15 +1,135 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.scm.NullSCM"/>
-  <canRoam>false</canRoam>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+
+set -e
+
+#Set the credentials to be able to pull from private directory and deploy the services
+EXTRA_ECS_CONFIG=&quot;ECS_CLUSTER=${CLUSTER_NAME}\nECS_ENGINE_AUTH_TYPE=dockercfg\nECS_ENGINE_AUTH_DATA={\&quot;https://index.docker.io/v1/\&quot;:{\&quot;auth\&quot;:\&quot;YWRtaW52aXNhZ2U6MjMmJl9PanVs\&quot;,\&quot;email\&quot;:\&quot;adminvisage\&quot;}}&quot;
+REGION=us-west-2
+KEY_FILE=/var/lib/jenkins/cluster-a-key.pem
+echo $EXTRA_ECS_CONFIG
+
+print_instance_ips() {
+    INSTANCE_ARNS=$(aws --region $REGION ecs list-container-instances --cluster $CLUSTER_NAME --query &apos;containerInstanceArns[*]&apos; --output text)
+    INSTANCE_IDS=$(aws --region $REGION ecs describe-container-instances --cluster $CLUSTER_NAME --container-instances $INSTANCE_ARNS --query &apos;containerInstances[*].ec2InstanceId&apos; --output text)
+    aws --region $REGION ec2 describe-instances --instance-ids $INSTANCE_IDS --query &apos;Reservations[*].Instances[*].PublicIpAddress&apos; --output text
+}
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+echo -n &quot;Waiting for instances to be up to add auth credentials (this may take a while) ...&quot;
+while ! INSTANCE_IPS=$(print_instance_ips 2&gt; /dev/null) ||
+        [ &quot;$(echo $INSTANCE_IPS | wc -w)&quot; -ne $CLUSTER_SIZE ] ; do
+    sleep 5
+done
+echo &quot;done&quot;
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no ec2-user@&quot;
+echo $KEY_FILE
+echo $SSH_ARGS
+for IP in $INSTANCE_IPS; do
+    echo $IP
+#delete old default and auth cluster configuration don&apos;t fail if nothing to remove
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;sudo rm /var/lib/ecs/data/ecs_agent_data.json || true&apos;&quot;
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;echo -e $(printf %q $EXTRA_ECS_CONFIG)  &gt; /etc/ecs/ecs.config&apos;&quot;
+#don&apos;t fail if nothing to stop    
+    ssh $SSH_ARGS$IP -t -t sudo bash -c &quot;&apos;sudo stop ecs || true&apos;&quot;
+    ssh $SSH_ARGS$IP -t -t sudo start ecs
+#wait for ecs agent to start properly
+    n=0
+    until [ $n -ge 5 ]
+    do
+      ssh $SSH_ARGS$IP -t -t curl http://localhost:51678/v1/metadata &amp;&amp; break
+      n=$[$n+1]
+      sleep 2
+    done
+done</command>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+CLUSTER_NAME=visage-api-cluster-prod
+REGION=us-west-2
+COMPOSE_FILE=&quot;docker-compose.prod.yml&quot;
+PERSISTENCE_SERVICE_NAME=visage-persist-prod-service
+MONGO_CONTAINER_NAME=mongo-visage
+PERSISTENCE_TASK_NAME=persist-deploy-prod
+KEY_FILE=/var/lib/jenkins/cluster-a-key.pem
+USERS_CREATION_FILE=create-users.js
+
+print_service_status() {
+    aws ecs describe-services --cluster $CLUSTER_NAME --services $NODE_SERVICE_NAME $PERSISTENCE_SERVICE_NAME
+}
+
+/usr/local/bin/ecs-cli configure --region $REGION --cluster $CLUSTER_NAME
+
+aws ecs update-service --cluster $CLUSTER_NAME --service $PERSISTENCE_SERVICE_NAME --desired-count 0
+
+aws ecs delete-service --cluster $CLUSTER_NAME --service $PERSISTENCE_SERVICE_NAME
+
+#Ensure no service is draining
+while ! DRAINING_SERVICES=$(print_service_status 2&gt; /dev/null) ||
+        [ &quot;$(echo $DRAINING_SERVICES | grep &apos;DRAINING&apos; | wc -l)&quot; -ne 0 ] ; do
+        echo &quot;Deleted services are still draining...&quot;
+        sleep 5
+done
+
+
+# Create only the task definitions with ecs cli because we can t set a load balancer with ecs-cli for now
+# https://github.com/aws/amazon-ecs-cli/issues/21
+#/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $PERSISTENCE_TASK_NAME service rm
+#/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $NODE_TASK_NAME service rm
+
+cd persistence
+
+#Insert admin credentials
+sed -i &quot;s/{{VISAGE_ADMIN_USER}}/$VISAGE_ADMIN_USER/g&quot; ${USERS_CREATION_FILE}
+sed -i &quot;s/{{NODE_BACKEND_USER}}/$NODE_BACKEND_USER/g&quot; ${USERS_CREATION_FILE}
+
+sed -e &quot;s,{{PROD_VISAGE_ES_USER_NAME}},$PROD_VISAGE_ES_USER_NAME,&quot; \
+-e &quot;s,{{PROD_VISAGE_MYSQL_ROOT_PASSWORD}},$PROD_VISAGE_MYSQL_ROOT_PASSWORD,&quot; \
+-e  &quot;s,{{PROD_VISAGE_ES_USER_PWD}},$PROD_VISAGE_ES_USER_PWD,&quot; -i.bak ${COMPOSE_FILE}
+
+#/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $PERSISTENCE_TASK_NAME service up
+/usr/local/bin/ecs-cli compose --file ${COMPOSE_FILE} --project-name $PERSISTENCE_TASK_NAME create &amp;&gt; outmongo.log
+TASK_MONGO=$(grep &apos;TaskDefinition&apos; outmongo.log | awk -F  &quot;=&quot; &apos;{gsub(&quot;\&quot;&quot;,&quot;&quot;,$5);print $5}&apos;)
+echo &quot;taskmongo : $TASK_MONGO&quot;
+
+#Create service associated to the previously created task def
+aws ecs create-service --cluster $CLUSTER_NAME --service-name $PERSISTENCE_SERVICE_NAME --task-definition $TASK_MONGO --desired-count 1
+
+#Ensure mongo service is stable
+echo &apos;waiting for mongo service to be stable and mongo task to be run&apos;
+aws ecs wait services-stable --cluster $CLUSTER_NAME --services $PERSISTENCE_SERVICE_NAME
+
+FULL_MONGO=$(/usr/local/bin/ecs-cli ps | grep &quot;$MONGO_CONTAINER_NAME&quot; | grep &quot;${PERSISTENCE_TASK_NAME}&quot; | grep &quot;RUNNING&quot; | grep &apos;tcp&apos; | awk &apos;{print $3}&apos; | sed &apos;s/-&gt;\|\/\|:/ /g&apos;)
+HOST_MONGO=$(echo $FULL_MONGO | awk &apos;{print $1}&apos;)
+PORT_MONGO=$(echo $FULL_MONGO | awk &apos;{print $2}&apos;)
+echo &quot;mongo : $FULL_MONGO&quot;
+
+#Add admins user
+DEST=&quot;ec2-user@&quot;$HOST_MONGO
+echo &quot;DEST&quot;=$DEST
+SSH_ARGS=&quot;-i $KEY_FILE -o StrictHostKeyChecking=no &quot;
+scp $SSH_ARGS $USERS_CREATION_FILE $DEST:/home/ec2-user/$USERS_CREATION_FILE
+CONTAINER_ID=$(ssh $SSH_ARGS$DEST -t &quot;sudo bash -c \&quot;docker ps | grep ${PERSISTENCE_TASK_NAME} | grep mongo-visage | cut -d&apos; &apos; -f1 \&quot;&quot;)
+echo &quot;CONTAINER ID=&quot;$CONTAINER_ID
+#INCEPTION
+ssh $SSH_ARGS$DEST -t sudo &quot;bash -c \&quot;docker exec -i $CONTAINER_ID mongo &lt; /home/ec2-user/${USERS_CREATION_FILE}\&quot; &quot;
+</command>
+    </hudson.tasks.Shell>
+  </builders>
   <publishers/>
   <buildWrappers/>
 </project>
