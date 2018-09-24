@@ -2,11 +2,7 @@
 <user>
   <fullName>Dale-Kurt Murray</fullName>
   <properties>
-    <jenkins.security.ApiTokenProperty>
-      <tokenStore>
-        <tokenList/>
-      </tokenStore>
-    </jenkins.security.ApiTokenProperty>
+    <jenkins.security.ApiTokenProperty/>
     <com.cloudbees.plugins.credentials.UserCredentialsProvider_-UserCredentialsProperty plugin="credentials@2.1.18">
       <domainCredentialsMap class="hudson.util.CopyOnWriteMap$Hash">
         <entry>
@@ -19,9 +15,7 @@
           <com.cloudbees.plugins.credentials.domains.Domain>
             <name>blueocean-github-domain</name>
             <description>blueocean-github-domain to store credentials by BlueOcean</description>
-            <specifications>
-              <io.jenkins.blueocean.rest.impl.pipeline.credential.BlueOceanDomainSpecification plugin="blueocean-pipeline-scm-api@1.5.2"/>
-            </specifications>
+            <specifications/>
           </com.cloudbees.plugins.credentials.domains.Domain>
           <list>
             <com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>
@@ -29,7 +23,7 @@
               <id>github</id>
               <description>GitHub Access Token</description>
               <username>dalekurt</username>
-              <password>{AQAAABAAAAAwk9eckIJ5b+wYJ/6tQpSrkp1B+LCrfUSUcR5YXTV0zUIbVksbEQWd+gSj92ZoUJCkvWJj3SBu2fCTew5GBKovcg==}</password>
+              <password>{AQAAABAAAABw103nbllEnIujs1ByMEUPwKvO4SAZOqTkTxUc2ItVRgttNwLuU7musGODhuXWucZIevEtE5PEP8hGxLsMA//whmWN9kcSpTbad7nXGcyPFUF6uBSTvfdsBalHs4wLGAIjmmHR2qC/YO+6hoDLv/h9fuce+P3YD2SUOf321EgdyyM=}</password>
             </com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>
           </list>
         </entry>
@@ -67,16 +61,5 @@
       </roles>
       <timestamp>1537390253356</timestamp>
     </jenkins.security.LastGrantedAuthoritiesProperty>
-    <io.jenkins.blueocean.autofavorite.user.FavoritingUserProperty plugin="blueocean-autofavorite@1.2.2">
-      <autofavoriteEnabled>true</autofavoriteEnabled>
-    </io.jenkins.blueocean.autofavorite.user.FavoritingUserProperty>
-    <hudson.plugins.favorite.user.FavoriteUserProperty plugin="favorite@2.3.2">
-      <data class="concurrent-hash-map">
-        <entry>
-          <string>my-project/master</string>
-          <boolean>true</boolean>
-        </entry>
-      </data>
-    </hudson.plugins.favorite.user.FavoriteUserProperty>
   </properties>
 </user>
