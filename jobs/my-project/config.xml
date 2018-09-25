@@ -1,19 +1,25 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject plugin="workflow-multibranch@2.20">
   <actions/>
-  <properties/>
+  <description></description>
+  <properties>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.config.FolderConfig plugin="pipeline-model-definition@1.3.2">
+      <dockerLabel></dockerLabel>
+      <registry plugin="docker-commons@1.13"/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.config.FolderConfig>
+  </properties>
   <folderViews class="jenkins.branch.MultiBranchProjectViewHolder" plugin="branch-api@2.0.20">
     <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
   </folderViews>
   <healthMetrics>
-    <com.cloudbees.hudson.plugins.folder.health.WorstChildHealthMetric plugin="cloudbees-folder@6.5.1">
+    <com.cloudbees.hudson.plugins.folder.health.WorstChildHealthMetric plugin="cloudbees-folder@6.6">
       <nonRecursive>false</nonRecursive>
     </com.cloudbees.hudson.plugins.folder.health.WorstChildHealthMetric>
   </healthMetrics>
   <icon class="jenkins.branch.MetadataActionFolderIcon" plugin="branch-api@2.0.20">
     <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
   </icon>
-  <orphanedItemStrategy class="com.cloudbees.hudson.plugins.folder.computed.DefaultOrphanedItemStrategy" plugin="cloudbees-folder@6.5.1">
+  <orphanedItemStrategy class="com.cloudbees.hudson.plugins.folder.computed.DefaultOrphanedItemStrategy" plugin="cloudbees-folder@6.6">
     <pruneDeadBranches>true</pruneDeadBranches>
     <daysToKeep>-1</daysToKeep>
     <numToKeep>-1</numToKeep>
@@ -21,7 +27,24 @@
   <triggers/>
   <disabled>false</disabled>
   <sources class="jenkins.branch.MultiBranchProject$BranchSourceList" plugin="branch-api@2.0.20">
-    <data/>
+    <data>
+      <jenkins.branch.BranchSource>
+        <source class="com.github.kostyasha.github.integration.multibranch.GitHubSCMSource" plugin="github-pullrequest@0.2.4">
+          <id>cc673220-b4df-489b-bc7a-d09d47a0203a</id>
+          <projectUrlStr>git@github.com:dalekurt/my-project.git</projectUrlStr>
+          <repoProvider class="com.github.kostyasha.github.integration.multibranch.repoprovider.GitHubPluginRepoProvider2">
+            <cacheConnection>true</cacheConnection>
+            <manageHooks>false</manageHooks>
+            <repoPermission>ADMIN</repoPermission>
+          </repoProvider>
+          <handlers/>
+          <scmFactory class="com.github.kostyasha.github.integration.multibranch.scm.AsIsGitSCMFactory"/>
+        </source>
+        <strategy class="jenkins.branch.DefaultBranchPropertyStrategy">
+          <properties class="empty-list"/>
+        </strategy>
+      </jenkins.branch.BranchSource>
+    </data>
     <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
   </sources>
   <factory class="org.jenkinsci.plugins.workflow.multibranch.WorkflowBranchProjectFactory">
